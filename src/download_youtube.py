@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox, filedialog
@@ -11,7 +12,12 @@ def quitar_ansi(texto):
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
         return ansi_escape.sub('', texto)
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(os.path.dirname(__file__))
+    return os.path.join(base_path, relative_path)
 
 class DescargadorMP3App:
     def __init__(self, root):
@@ -78,7 +84,7 @@ class DescargadorMP3App:
         ventana.title("Cómo obtener la URL de una playlist")
 
         try:
-            ruta_imagen = os.path.join(base_dir, "..", "assets", "basic_instructions.PNG")
+            ruta_imagen = resource_path("assets/basic_instructions.PNG")
             img = Image.open(ruta_imagen)
             img = img.resize((800, 600), Image.LANCZOS)
             imagen_tk = ImageTk.PhotoImage(img)
@@ -175,15 +181,27 @@ class DescargadorMP3App:
 # --- Lanzar aplicación ---
 if __name__ == "__main__":
     root = tk.Tk()
-    ruta_ico = os.path.join(base_dir, "..", "assets", "tithonus_logo.ico")
-    ruta_png = os.path.join(base_dir, "..", "assets", "tithonus_logo.png")  # necesitas un png
 
-    root.iconbitmap(ruta_ico)
+    ruta_ico = resource_path("assets/tithonus_logo.ico")
+
+    if os.path.exists(ruta_ico):
+        try:
+            root.iconbitmap(ruta_ico)
+        except Exception as e:
+            print(f"No se pudo cargar el icono .ico: {e}")
+    else:
+        print("Icono .ico no encontrado:", ruta_ico)
+
+    ruta_ico = resource_path("assets/tithonus_logo.ico")
+    ruta_png = resource_path("assets/tithonus_logo.png")
 
     root.update()
 
-    icon_png = tk.PhotoImage(file=ruta_png)
-    root.call('wm', 'iconphoto', root._w, icon_png)
+    try:
+        icon_png = tk.PhotoImage(file=ruta_png)
+        root.call('wm', 'iconphoto', root._w, icon_png)
+    except Exception as e:
+        print(f"No se pudo cargar el icono PNG: {e}")
 
     app = DescargadorMP3App(root)
     root.mainloop()
