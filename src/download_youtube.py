@@ -175,5 +175,15 @@ class DescargadorMP3App:
 # --- Lanzar aplicación ---
 if __name__ == "__main__":
     root = tk.Tk()
+    ruta_ico = os.path.join(base_dir, "..", "assets", "tithonus_logo.ico")
+    ruta_png = os.path.join(base_dir, "..", "assets", "tithonus_logo.png")  # necesitas un png
+
+    root.iconbitmap(ruta_ico)
+
+    root.update()
+
+    icon_png = tk.PhotoImage(file=ruta_png)
+    root.call('wm', 'iconphoto', root._w, icon_png)
+
     app = DescargadorMP3App(root)
     root.mainloop()
