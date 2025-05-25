@@ -1,73 +1,120 @@
 import os
-import yt_dlp
-from datetime import datetime 
+import threading
+import tkinter as tk
+from tkinter import messagebox, filedialog, ttk
+from yt_dlp import YoutubeDL
+from datetime import datetime
+import re
 
-# Crear carpeta de descargas
-output_folder = "mp3_playlist"
-os.makedirs(output_folder, exist_ok=True)
+def quitar_ansi(texto):
+        ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+        return ansi_escape.sub('', texto)
 
-# Pedir URL de la playlist
-playlist_url = input("Introduce la URL de la playlist de YouTube: ")
+class DescargadorMP3App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Descargador de MP3 de YouTube")
+        self.root.geometry("600x400")
 
-# Archivo de log de errores
-error_log = os.path.join(output_folder, "errores.txt")
+        self.output_folder = "mp3_playlist"
+        os.makedirs(self.output_folder, exist_ok=True)
+        self.error_log = os.path.join(self.output_folder, "errores.txt")
 
-# Opciones base de descarga
-base_ydl_opts = {
-    'format': 'bestaudio/best',
-    'outtmpl': os.path.join(output_folder, '%(title)s.%(ext)s'),
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
-        'preferredquality': '192',
-    }],
-    'noplaylist': True,  # Importante para descargar vídeo a vídeo
-    'quiet': True,       # Modo silencioso
-    'no_warnings': True, # No mostrar warnings
-}
+        frame = tk.Frame(self.root)
+        frame.pack(padx=10, pady=10)
 
-def descargar_video(url):
-    """Descarga un solo vídeo."""
-    try:
-        with yt_dlp.YoutubeDL(base_ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            print(f"✅ Descargado: {info.get('title', 'Sin título')}")
-    except Exception as e:
-        print(f"❌ Error descargando: {url}")
-        # Guardar error en log
-        with open(error_log, 'a', encoding='utf-8') as f:
-            f.write(f"Error en '{url}': {str(e)}\n")
+        tk.Label(frame, text="URL de la playlist de YouTube:").pack(anchor='w')
+        self.entry_url = tk.Entry(frame, width=70)
+        self.entry_url.pack()
 
-def obtener_videos_uno_a_uno(playlist_url):
-    """Obtiene todas las URLs individuales de una playlist."""
-    videos = []
-    opts = {
-        'quiet': True,
-        'skip_download': True,
-        'extract_flat': True,  # No bajar vídeos, solo URLs
-    }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(playlist_url, download=False)
+        btn_descargar = tk.Button(frame, text="Descargar MP3", command=self.iniciar_descarga)
+        btn_descargar.pack(pady=10)
 
-        for entry in info.get('entries', []):
-            if not entry:
-                continue
-            url = entry.get('url')
-            if url.startswith('http'):
-                videos.append(url)
-            else:
-                videos.append(f"https://www.youtube.com/watch?v={url}")
-    
-    return videos
+        self.log_text = tk.Text(self.root, height=15, wrap=tk.WORD)
+        self.log_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-# --- MAIN ---
-print("\nObteniendo lista de vídeos (modo rápido)...")
-videos = obtener_videos_uno_a_uno(playlist_url)
-print(f"Se encontraron {len(videos)} vídeos.\n")
+        self.progress_label = tk.Label(self.root, text="")
+        self.progress_label.pack(padx=10, pady=5)
 
-for idx, video_url in enumerate(videos, start=1):
-    print(f"[{idx}/{len(videos)}] Descargando...")
-    descargar_video(video_url)
+    def obtener_urls_individuales(self, playlist_url):
+        opts = {
+            'quiet': True,
+            'skip_download': True,
+            'extract_flat': True,
+        }
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(playlist_url, download=False)
+            videos = []
+            for entry in info.get('entries', []):
+                url = entry.get('url')
+                if url.startswith('http'):
+                    videos.append(url)
+                else:
+                    videos.append(f"https://www.youtube.com/watch?v={url}")
+            return videos
 
-print(f"\n🎵 Descarga completada. Los MP3 están en '{output_folder}'")
-print(f"📜 Si hubo errores, están en '{error_log}'")
+    def hook_progreso(self, d):
+        if d['status'] == 'downloading':
+            porcentaje = d.get('_percent_str', '').strip()
+            porcentaje_limpio = quitar_ansi(porcentaje)
+            self.progress_label.after(0, lambda: self.progress_label.config(text=porcentaje_limpio))
+        elif d['status'] == 'finished':
+            texto = "100%"
+            self.progress_label.after(0, lambda: self.progress_label.config(text=texto))
+
+
+    def descargar_playlist(self, url):
+        self.log_text.insert(tk.END, "🔍 Obteniendo lista de vídeos...\n")
+        self.log_text.see(tk.END)
+
+        try:
+            videos = self.obtener_urls_individuales(url)
+        except Exception as e:
+            self.log_text.insert(tk.END, f"❌ Error al obtener vídeos: {e}\n")
+            return
+
+        self.log_text.insert(tk.END, f"🎥 {len(videos)} vídeos encontrados.\n\n")
+
+        for idx, video_url in enumerate(videos, 1):
+            self.log_text.insert(tk.END, f"[{idx}/{len(videos)}] Descargando...\n")
+            self.log_text.see(tk.END)
+            try:
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': os.path.join(self.output_folder, '%(title)s.%(ext)s'),
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }],
+                    'noplaylist': True,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'progress_hooks': [self.hook_progreso]
+                }
+
+                with YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(video_url, download=True)
+                    title = info.get('title', 'Sin título')
+                    self.log_text.insert(tk.END, f"✅ {title}\n")
+            except Exception as e:
+                self.log_text.insert(tk.END, f"❌ Error en {video_url}\n")
+                with open(self.error_log, 'a', encoding='utf-8') as f:
+                    f.write(f"{datetime.now()} | {video_url} | {str(e)}\n")
+
+        self.log_text.insert(tk.END, "\n🎵 ¡Descarga completada!\n")
+
+    def iniciar_descarga(self):
+        url = self.entry_url.get()
+        if not url:
+            messagebox.showwarning("Error", "Introduce una URL válida.")
+            return
+
+        threading.Thread(target=self.descargar_playlist, args=(url,), daemon=True).start()
+
+
+# --- Lanzar aplicación ---
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = DescargadorMP3App(root)
+    root.mainloop()
