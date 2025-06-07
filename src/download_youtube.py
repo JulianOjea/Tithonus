@@ -7,6 +7,13 @@ from yt_dlp import YoutubeDL
 from datetime import datetime
 import re
 from PIL import Image, ImageTk
+import subprocess
+
+
+def get_ffmpeg_path():
+    # Ruta absoluta del ejecutable ffmpeg.exe dentro del proyecto
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, 'ffmpeg', 'bin', 'ffmpeg.exe')
 
 def quitar_ansi(texto):
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
@@ -22,7 +29,7 @@ def resource_path(relative_path):
 class DescargadorMP3App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Tithonus")
+        self.root.title("Tithonus_v1.3")
         self.root.geometry("600x500")
         self.centrar_ventana(600, 500)
 
@@ -155,7 +162,8 @@ class DescargadorMP3App:
                     'noplaylist': True,
                     'quiet': True,
                     'no_warnings': True,
-                    'progress_hooks': [self.hook_progreso]
+                    'progress_hooks': [self.hook_progreso],
+                    'ffmpeg_location': get_ffmpeg_path(),
                 }
 
                 with YoutubeDL(ydl_opts) as ydl:
@@ -170,13 +178,56 @@ class DescargadorMP3App:
         self.log_text.insert(tk.END, "\n🎵 ¡Descarga completada!\n")
         self.btn_descargar.after(0, lambda: self.btn_descargar.config(state=tk.NORMAL))
 
+    def descargar_video(self, url):
+        self.btn_descargar.after(0, lambda: self.btn_descargar.config(state=tk.DISABLED))
+        self.log_text.insert(tk.END, "🔍 Descargando vídeo individual...\n")
+        self.log_text.see(tk.END)
+
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(self.output_folder, '%(title)s.%(ext)s'),
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'progress_hooks': [self.hook_progreso],
+                'ffmpeg_location': get_ffmpeg_path(),
+            }
+
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = info.get('title', 'Sin título')
+                self.log_text.insert(tk.END, f"✅ {title}\n")
+
+        except Exception as e:
+            self.log_text.insert(tk.END, f"❌ Error al descargar vídeo: {e}\n")
+            with open(self.error_log, 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.now()} | {url} | {str(e)}\n")
+
+        self.log_text.insert(tk.END, "\n🎵 ¡Descarga completada!\n")
+        self.btn_descargar.after(0, lambda: self.btn_descargar.config(state=tk.NORMAL))
+
     def iniciar_descarga(self):
-        url = self.entry_url.get()
+        url = self.entry_url.get().strip()
         if not url:
-            messagebox.showwarning("Error", "Introduce una URL válida.")
+            messagebox.showwarning("Aviso", "Por favor, introduce una URL de YouTube.")
             return
 
-        threading.Thread(target=self.descargar_playlist, args=(url,), daemon=True).start()
+        # Detectar si la URL es de playlist o vídeo individual:
+        if 'list=' in url and 'v=' not in url:
+            # Es playlist
+            hilo = threading.Thread(target=self.descargar_playlist, args=(url,))
+        else:
+            # Es vídeo individual
+            hilo = threading.Thread(target=self.descargar_video, args=(url,))
+
+        hilo.daemon = True
+        hilo.start()
 
 # --- Lanzar aplicación ---
 if __name__ == "__main__":
